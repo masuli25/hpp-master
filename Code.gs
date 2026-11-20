@@ -53,7 +53,7 @@ function updateRecord(table, id, record) {
   const rowNumber = offset + 2;
   const old = sh.getRange(rowNumber, 1, 1, headers.length).getValues()[0];
   const merged = {};
-  headers.forEach((key, i) => merged[key] = record[key] !== undefined ? record[key] : old[i]);
+  headers.forEach((key, i) => merged[key] = key === "id" ? old[i] : (record[key] !== undefined ? record[key] : old[i]));
   if (table === "BAHAN") {
     const qty = Number(merged.jumlah_dasar || 0);
     if (!(qty > 0)) throw new Error("Jumlah dalam satuan dasar harus lebih dari 0.");
@@ -73,6 +73,45 @@ function deleteRecord(table, id) {
   if (offset < 0) throw new Error("Data dengan ID tersebut tidak ditemukan.");
   sh.deleteRow(offset + 2);
   return {ok:true,table:table,deleted:1};
+}
+
+/**
+ * Perbaikan satu kali untuk tautan komposisi resep uji.
+ * Mengalihkan detail dari ID lama ke ID resep yang terbentuk saat resep diedit.
+ */
+function PERBAIKI_LINK_RESEP_UJI() {
+  const oldRecipeId = "HPP-1795195135721";
+  const currentRecipeId = "HPP-1795196304003";
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const recipeSheet = ss.getSheetByName("RESEP");
+  const detailSheet = ss.getSheetByName("DETAIL_RESEP");
+  if (!recipeSheet || !detailSheet) throw new Error("Sheet RESEP atau DETAIL_RESEP tidak ditemukan.");
+  const recipeValues = recipeSheet.getDataRange().getValues();
+  const recipeHeaders = recipeValues.shift();
+  const idIndex = recipeHeaders.indexOf("id");
+  if (idIndex < 0 || !recipeValues.some(row => String(row[idIndex]) === currentRecipeId)) {
+    throw new Error("ID resep tujuan tidak ditemukan. Tidak ada data yang diubah.");
+  }
+  const detailValues = detailSheet.getDataRange().getValues();
+  if (detailValues.length < 2) return {ok:true,updated:0};
+  const detailHeaders = detailValues[0];
+  const recipeIdIndex = detailHeaders.indexOf("resep_id");
+  if (recipeIdIndex < 0) throw new Error("Kolom resep_id tidak ditemukan.");
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    let updated = 0;
+    for (let r = 1; r < detailValues.length; r++) {
+      if (String(detailValues[r][recipeIdIndex]) === oldRecipeId) {
+        detailSheet.getRange(r + 1, recipeIdIndex + 1).setValue(currentRecipeId);
+        updated++;
+      }
+    }
+    SpreadsheetApp.flush();
+    return {ok:true,updated:updated,recipe_id:currentRecipeId};
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function initializeDatabase_() {
