@@ -1,5 +1,4 @@
 const SPREADSHEET_ID = "1xXjRCHncZ8xvvi6s6qyx6zOpsi6dWHv-idj57DZGEIE";
-const API_KEY = "GANTI_DENGAN_KUNCI_RAHASIA_ANDA";
 
 const TABLES = {
   PENGATURAN: ["key","value","updated_at"],
@@ -14,25 +13,31 @@ const TABLES = {
   RIWAYAT_HARGA: ["id","tanggal","bahan_id","nama_bahan","harga_lama","harga_baru","satuan","catatan"]
 };
 
-function doGet(e) {
-  const action = (e && e.parameter && e.parameter.action) || "health";
-  if (action === "health") return json_({ ok: true, app: "HPP MASTER API", version: "1.0" });
-  return json_({ ok: false, message: "Gunakan POST untuk operasi database." });
+// Aplikasi disajikan dari Apps Script agar akses Google membatasi pengguna.
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile("Index")
+    .setTitle("HPP MASTER — Food Costing")
+    .addMetaTag("viewport", "width=device-width, initial-scale=1");
 }
 
-function doPost(e) {
-  try {
-    const body = JSON.parse((e && e.postData && e.postData.contents) || "{}");
-    if (body.key !== API_KEY) return json_({ ok: false, message: "API key tidak valid." });
-    const action = body.action || "";
-    if (action === "initialize") return json_(initializeDatabase_());
-    if (action === "getAll") return json_(getAll_());
-    if (action === "add") return json_(addRecord_(body.table, body.record || {}));
-    if (action === "replaceTable") return json_(replaceTable_(body.table, body.records || []));
-    return json_({ ok: false, message: "Action tidak dikenal." });
-  } catch (err) {
-    return json_({ ok: false, message: String(err && err.message ? err.message : err) });
-  }
+function SETUP_HPP_MASTER() {
+  const result = initializeDatabase_();
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
+// Fungsi-fungsi api* dipanggil dari halaman Index melalui google.script.run.
+// Tidak menggunakan API key di browser.
+function getAllData() {
+  return getAll_();
+}
+
+function addRecord(table, record) {
+  return addRecord_(table, record || {});
+}
+
+function replaceTable(table, records) {
+  return replaceTable_(table, records || []);
 }
 
 function initializeDatabase_() {
@@ -52,7 +57,7 @@ function initializeDatabase_() {
       headers.forEach((h, i) => { if (!current[i]) sh.getRange(1, i + 1).setValue(h); });
     }
   });
-  return { ok: true, message: "Database HPP MASTER berhasil disiapkan.", spreadsheet: ss.getUrl(), created: created, tables: Object.keys(TABLES) };
+  return { ok: true, message: "Database HPP MASTER siap.", created: created, tables: Object.keys(TABLES) };
 }
 
 function getAll_() {
@@ -65,7 +70,10 @@ function getAll_() {
     const headers = values.shift();
     data[name] = values.filter(row => row.some(v => v !== "")).map(row => {
       const obj = {};
-      headers.forEach((h, i) => obj[h] = row[i]);
+      headers.forEach((h, i) => {
+        const value = row[i];
+        obj[h] = value instanceof Date ? value.toISOString() : value;
+      });
       return obj;
     });
   });
@@ -74,19 +82,23 @@ function getAll_() {
 
 function addRecord_(table, record) {
   if (!TABLES[table]) throw new Error("Nama tabel tidak diizinkan.");
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sh = ss.getSheetByName(table);
-  if (!sh) throw new Error("Tabel belum dibuat. Jalankan initialize terlebih dahulu.");
-  const headers = TABLES[table];
-  const row = headers.map(h => record[h] !== undefined ? record[h] : "");
-  sh.appendRow(row);
-  return { ok: true, table: table, inserted: 1 };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(table);
+    if (!sh) throw new Error("Tabel belum dibuat.");
+    const headers = TABLES[table];
+    const row = headers.map(h => record[h] !== undefined ? record[h] : "");
+    sh.appendRow(row);
+    return { ok: true, table: table, inserted: 1 };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function replaceTable_(table, records) {
   if (!TABLES[table]) throw new Error("Nama tabel tidak diizinkan.");
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sh = ss.getSheetByName(table);
+  const sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(table);
   if (!sh) throw new Error("Tabel belum dibuat.");
   const headers = TABLES[table];
   const last = sh.getLastRow();
@@ -96,14 +108,4 @@ function replaceTable_(table, records) {
     sh.getRange(2, 1, rows.length, headers.length).setValues(rows);
   }
   return { ok: true, table: table, count: records.length };
-}
-
-function json_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
-}
-
-// Jalankan fungsi ini sekali dari editor Apps Script untuk membuat semua tab.
-function SETUP_HPP_MASTER() {
-  const result = initializeDatabase_();
-  Logger.log(JSON.stringify(result));
 }
