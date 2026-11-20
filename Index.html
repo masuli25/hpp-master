@@ -87,4 +87,39 @@ function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function renderAll(){renderIngredients();renderTable('recipeRows',state.recipes,['name','category',x=>x.yield+' '+x.yieldUnit,'yieldUnit','components',()=>'<span class="tag">Draft</span>'],'Belum ada resep tersimpan.');renderTable('productionRows',state.production,['date','product','planned','actual',x=>x.waste+'%','note'],'Belum ada catatan produksi.');renderTable('packagingRows',state.packaging,['name',x=>rupiah(x.price), 'qty','unit',x=>rupiah(Number(x.price)/(Number(x.qty)||1))],'Belum ada data packaging.');renderTable('overheadRows',state.overhead,['name','category','type',x=>rupiah(x.amount),'period','allocation'],'Belum ada biaya operasional.');document.getElementById('statIngredients').textContent=state.ingredients.length;document.getElementById('statRecipes').textContent=state.recipes.length;document.getElementById('statOverhead').textContent=rupiah(state.overhead.reduce((a,x)=>a+Number(x.amount||0),0));document.getElementById('statCosting').textContent='0'}
 renderAll();
 </script>
-</body></html>
+
+<script>
+(function(){
+  const form=document.getElementById('dataForm');
+  const clean=form.cloneNode(true); form.parentNode.replaceChild(clean,form);
+  function id(){return 'HPP-'+Date.now()+'-'+Math.random().toString(36).slice(2,7)}
+  function connect(ok,msg){const el=document.getElementById('connection');el.textContent=ok?'● Google Sheets terhubung':'● '+msg;el.style.color=ok?'var(--green)':'var(--red)';document.getElementById('configNotice').style.display=ok?'none':'block'}
+  function load(){connect(false,'Menghubungkan...');google.script.run.withSuccessHandler(r=>{
+    if(!r||!r.ok){connect(false,'Gagal memuat data');return}
+    const d=r.data||{};
+    state.ingredients=(d.BAHAN||[]).map(x=>({name:x.nama,category:x.kategori,price:x.harga_beli,qty:x.jumlah_dasar||x.jumlah_beli,unit:x.satuan_dasar||x.satuan_beli,note:x.catatan}));
+    state.recipes=(d.RESEP||[]).map(x=>({name:x.nama_produk,category:x.kategori,yield:x.hasil_batch,yieldUnit:x.satuan_hasil,components:'—'}));
+    state.production=(d.PRODUKSI||[]).map(x=>({date:x.tanggal,product:x.nama_produk,planned:x.jumlah_rencana,actual:x.hasil_aktual,waste:x.waste_persen,note:x.catatan}));
+    state.packaging=(d.PACKAGING||[]).map(x=>({name:x.nama_kemasan,price:x.harga_beli,qty:x.jumlah_beli,unit:x.satuan_beli}));
+    state.overhead=(d.BIAYA_OPERASIONAL||[]).map(x=>({name:x.nama_biaya,category:x.kategori,type:x.jenis_biaya,amount:x.nominal,period:x.periode,allocation:x.metode_alokasi}));
+    renderAll();connect(true,'Google Sheets terhubung');
+  }).withFailureHandler(e=>connect(false,e&&e.message?e.message:'Gagal menghubungkan')).getAllData()}
+  function save(type,d){
+    const now=new Date().toISOString(),key=id();let table,record;
+    if(type==='ingredient'){table='BAHAN';let q=+d.qty||0;record={id:key,nama:d.name,kategori:d.category,harga_beli:+d.price||0,jumlah_beli:q,satuan_beli:d.unit,jumlah_dasar:q,satuan_dasar:d.unit,harga_per_satuan_dasar:q?(+d.price||0)/q:0,supplier:'',catatan:d.note||'',updated_at:now}}
+    if(type==='recipe'){table='RESEP';record={id:key,nama_produk:d.name,kategori:d.category,hasil_batch:+d.yield||0,satuan_hasil:d.yieldUnit,catatan:'Komponen direncanakan: '+(d.components||0),updated_at:now}}
+    if(type==='production'){table='PRODUKSI';record={id:key,tanggal:d.date,resep_id:'',nama_produk:d.product,jumlah_rencana:+d.planned||0,hasil_aktual:+d.actual||0,waste_persen:+d.waste||0,biaya_tenaga_kerja:0,catatan:d.note||''}}
+    if(type==='packaging'){table='PACKAGING';let q=+d.qty||0;record={id:key,nama_kemasan:d.name,harga_beli:+d.price||0,jumlah_beli:q,satuan_beli:d.unit,biaya_per_unit:q?(+d.price||0)/q:0,catatan:'',updated_at:now}}
+    if(type==='overhead'){table='BIAYA_OPERASIONAL';record={id:key,nama_biaya:d.name,kategori:d.category,jenis_biaya:d.type,nominal:+d.amount||0,periode:d.period,metode_alokasi:d.allocation,target_alokasi:'',catatan:'',updated_at:now}}
+    return new Promise((ok,no)=>google.script.run.withSuccessHandler(ok).withFailureHandler(no).addRecord(table,record));
+  }
+  clean.addEventListener('submit',async e=>{
+    e.preventDefault();const type=clean.dataset.type,d=Object.fromEntries(new FormData(clean).entries()),btn=clean.querySelector('button[type=submit]');
+    btn.disabled=true;btn.textContent='Menyimpan...';
+    try{const r=await save(type,d);if(!r||!r.ok)throw new Error('Penyimpanan gagal');closeModal();clean.reset();load()}
+    catch(err){alert('Gagal menyimpan: '+(err.message||err))}
+    finally{btn.disabled=false;btn.textContent='Simpan'}
+  });
+  load();
+})();
+</script></body></html>
