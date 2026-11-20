@@ -132,6 +132,22 @@ function getRecipeDetails() {
   return { ok: true, data: data };
 }
 
+
+// Konversi satuan resep ke satuan dasar bahan. Satuan yang tidak sekelompok ditolak.
+function convertToBaseUnit_(quantity, fromUnit, toUnit) {
+  const units = {
+    gram: { group: "mass", factor: 1 }, kg: { group: "mass", factor: 1000 },
+    ml: { group: "volume", factor: 1 }, liter: { group: "volume", factor: 1000 },
+    pcs: { group: "count", factor: 1 }, buah: { group: "count", factor: 1 }
+  };
+  const from = units[String(fromUnit).toLowerCase()];
+  const to = units[String(toUnit).toLowerCase()];
+  if (!from || !to || from.group !== to.group) {
+    throw new Error("Satuan " + fromUnit + " tidak dapat dikonversi ke " + toUnit + ". Pilih satuan yang sesuai dengan bahan.");
+  }
+  return quantity * from.factor / to.factor;
+}
+
 // Simpan komposisi sekaligus menghitung biaya berdasarkan harga satuan dasar bahan.
 function addRecipeDetail(record) {
   record = record || {};
@@ -151,10 +167,12 @@ function addRecipeDetail(record) {
     const o = {}; resepHeaders.forEach((h, i) => o[h] = row[i]); return o;
   }).find(x => String(x.id) === String(record.resep_id));
   if (!resep) throw new Error("Resep tidak ditemukan.");
-  const qty = Number(record.jumlah_pakai);
+  const qtyInput = Number(record.jumlah_pakai);
   const baseQty = Number(bahan.jumlah_dasar);
   const price = Number(bahan.harga_beli);
-  if (!(qty > 0) || !(baseQty > 0) || !(price >= 0)) throw new Error("Jumlah pemakaian atau data harga bahan tidak valid.");
+  if (!(qtyInput > 0) || !(baseQty > 0) || !(price >= 0)) throw new Error("Jumlah pemakaian atau data harga bahan tidak valid.");
+  const inputUnit = String(record.satuan_pakai || bahan.satuan_dasar);
+  const qty = convertToBaseUnit_(qtyInput, inputUnit, String(bahan.satuan_dasar));
   const costPerBase = price / baseQty;
   const cost = qty * costPerBase;
   const row = [
