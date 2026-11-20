@@ -88,6 +88,13 @@ function addRecord_(table, record) {
     const sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(table);
     if (!sh) throw new Error("Tabel belum dibuat.");
     const headers = TABLES[table];
+    // Simpan harga per satuan dasar secara permanen, bukan hanya menghitungnya di tampilan.
+    if (table === "BAHAN") {
+      const harga = Number(record.harga_beli || 0);
+      const jumlahDasar = Number(record.jumlah_dasar || 0);
+      if (!(jumlahDasar > 0)) throw new Error("Jumlah dalam satuan dasar harus lebih dari 0.");
+      record.harga_per_satuan_dasar = harga / jumlahDasar;
+    }
     const row = headers.map(h => record[h] !== undefined ? record[h] : "");
     sh.appendRow(row);
     return { ok: true, table: table, inserted: 1 };
@@ -203,4 +210,74 @@ function calculateAndSaveHPP(input) {
     total_waste: wasteCost, total_biaya: total,
     hasil_produksi: actualYield, hpp_per_unit: perUnit
   };
+}
+
+
+// Mengisi harga_per_satuan_dasar pada seluruh data bahan lama dan baru.
+function PERBARUI_HARGA_SATUAN_DASAR() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sh = ss.getSheetByName("BAHAN");
+  if (!sh || sh.getLastRow() < 2) return { ok: true, updated: 0 };
+  const values = sh.getDataRange().getValues();
+  const headers = values[0];
+  const idxHarga = headers.indexOf("harga_beli");
+  const idxJumlah = headers.indexOf("jumlah_dasar");
+  const idxPerUnit = headers.indexOf("harga_per_satuan_dasar");
+  if ([idxHarga, idxJumlah, idxPerUnit].some(i => i < 0)) throw new Error("Kolom harga bahan tidak ditemukan.");
+  let updated = 0;
+  const out = values.slice(1).map(row => {
+    const harga = Number(row[idxHarga] || 0);
+    const jumlah = Number(row[idxJumlah] || 0);
+    const val = jumlah > 0 ? harga / jumlah : "";
+    if (row[idxPerUnit] !== val) updated++;
+    row[idxPerUnit] = val;
+    return [val];
+  });
+  if (out.length) sh.getRange(2, idxPerUnit + 1, out.length, 1).setValues(out);
+  sh.getRange(2, idxPerUnit + 1, Math.max(out.length, 1), 1).setNumberFormat('"Rp" #,##0.00');
+  return { ok: true, updated: updated, rows: out.length };
+}
+
+// Merapikan semua tab: lebar kolom, tinggi baris, header, format angka, dan filter.
+function RAPIKAN_SHEET_HPP_MASTER() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const currencyHeaders = ["harga_beli","harga_per_satuan_dasar","biaya","biaya_per_unit","nominal","total_bahan","total_tambahan","total_packaging","total_tenaga_kerja","total_overhead","total_waste","total_biaya","hpp_per_unit","harga_lama","harga_baru"];
+  const dateHeaders = ["tanggal","updated_at"];
+  Object.keys(TABLES).forEach(name => {
+    const sh = ss.getSheetByName(name);
+    if (!sh) return;
+    const lastCol = Math.max(sh.getLastColumn(), TABLES[name].length);
+    const lastRow = Math.max(sh.getLastRow(), 1);
+    sh.setFrozenRows(1);
+    sh.setRowHeight(1, 38);
+    if (lastRow > 1) sh.setRowHeights(2, lastRow - 1, 28);
+    const headerRange = sh.getRange(1, 1, 1, lastCol);
+    headerRange.setBackground("#185adb").setFontColor("#ffffff")
+      .setFontWeight("bold").setFontSize(10).setVerticalAlignment("middle")
+      .setWrap(true);
+    sh.getRange(1, 1, lastRow, lastCol).setVerticalAlignment("middle");
+    if (lastRow > 1) {
+      const headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+      headers.forEach((h, i) => {
+        const col = i + 1;
+        if (currencyHeaders.indexOf(String(h)) >= 0) {
+          sh.getRange(2, col, lastRow - 1, 1).setNumberFormat('"Rp" #,##0.00');
+        } else if (dateHeaders.indexOf(String(h)) >= 0) {
+          sh.getRange(2, col, lastRow - 1, 1).setNumberFormat("dd mmm yyyy");
+        } else if (["jumlah_beli","jumlah_dasar","hasil_batch","jumlah_pakai","jumlah_rencana","hasil_aktual","jumlah_batch","hasil_produksi"].indexOf(String(h)) >= 0) {
+          sh.getRange(2, col, lastRow - 1, 1).setNumberFormat("#,##0.###");
+        }
+      });
+    }
+    sh.autoResizeColumns(1, lastCol);
+    for (let col = 1; col <= lastCol; col++) {
+      const width = sh.getColumnWidth(col);
+      sh.setColumnWidth(col, Math.max(105, Math.min(width, 250)));
+    }
+    if (sh.getFilter()) sh.getFilter().remove();
+    if (lastRow > 1) sh.getRange(1, 1, lastRow, lastCol).createFilter();
+  });
+  const update = PERBARUI_HARGA_SATUAN_DASAR();
+  SpreadsheetApp.flush();
+  return { ok: true, formatted: Object.keys(TABLES).length, priceRowsUpdated: update.updated };
 }
