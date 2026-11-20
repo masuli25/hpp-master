@@ -40,6 +40,41 @@ function replaceTable(table, records) {
   return replaceTable_(table, records || []);
 }
 
+function updateRecord(table, id, record) {
+  if (!TABLES[table] || !id) throw new Error("Tabel atau ID tidak valid.");
+  const sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(table);
+  if (!sh || sh.getLastRow() < 2) throw new Error("Data tidak ditemukan.");
+  const headers = TABLES[table];
+  const idCol = headers.indexOf("id") + 1;
+  if (!idCol) throw new Error("Kolom ID tidak tersedia.");
+  const ids = sh.getRange(2, idCol, sh.getLastRow() - 1, 1).getDisplayValues();
+  const offset = ids.findIndex(r => String(r[0]) === String(id));
+  if (offset < 0) throw new Error("Data dengan ID tersebut tidak ditemukan.");
+  const rowNumber = offset + 2;
+  const old = sh.getRange(rowNumber, 1, 1, headers.length).getValues()[0];
+  const merged = {};
+  headers.forEach((key, i) => merged[key] = record[key] !== undefined ? record[key] : old[i]);
+  if (table === "BAHAN") {
+    const qty = Number(merged.jumlah_dasar || 0);
+    if (!(qty > 0)) throw new Error("Jumlah dalam satuan dasar harus lebih dari 0.");
+    merged.harga_per_satuan_dasar = Number(merged.harga_beli || 0) / qty;
+  }
+  sh.getRange(rowNumber, 1, 1, headers.length).setValues([headers.map(k => merged[k])]);
+  return {ok:true,table:table,updated:1};
+}
+
+function deleteRecord(table, id) {
+  if (!TABLES[table] || !id) throw new Error("Tabel atau ID tidak valid.");
+  const sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(table);
+  if (!sh || sh.getLastRow() < 2) throw new Error("Data tidak ditemukan.");
+  const idCol = TABLES[table].indexOf("id") + 1;
+  const ids = sh.getRange(2, idCol, sh.getLastRow() - 1, 1).getDisplayValues();
+  const offset = ids.findIndex(r => String(r[0]) === String(id));
+  if (offset < 0) throw new Error("Data dengan ID tersebut tidak ditemukan.");
+  sh.deleteRow(offset + 2);
+  return {ok:true,table:table,deleted:1};
+}
+
 function initializeDatabase_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const created = [];
