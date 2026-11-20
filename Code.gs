@@ -109,3 +109,98 @@ function replaceTable_(table, records) {
   }
   return { ok: true, table: table, count: records.length };
 }
+
+// Mengambil komposisi resep untuk ditampilkan di aplikasi.
+function getRecipeDetails() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sh = ss.getSheetByName("DETAIL_RESEP");
+  if (!sh || sh.getLastRow() < 2) return { ok: true, data: [] };
+  const values = sh.getDataRange().getValues();
+  const headers = values.shift();
+  const data = values.filter(row => row.some(v => v !== "")).map(row => {
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = row[i]);
+    return obj;
+  });
+  return { ok: true, data: data };
+}
+
+// Simpan komposisi sekaligus menghitung biaya berdasarkan harga satuan dasar bahan.
+function addRecipeDetail(record) {
+  record = record || {};
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const bahanSheet = ss.getSheetByName("BAHAN");
+  const resepSheet = ss.getSheetByName("RESEP");
+  if (!record.resep_id || !record.bahan_id) throw new Error("Resep dan bahan wajib dipilih.");
+  const bahanRows = bahanSheet.getDataRange().getValues();
+  const bahanHeaders = bahanRows.shift();
+  const bahan = bahanRows.map(row => {
+    const o = {}; bahanHeaders.forEach((h, i) => o[h] = row[i]); return o;
+  }).find(x => String(x.id) === String(record.bahan_id));
+  if (!bahan) throw new Error("Bahan tidak ditemukan.");
+  const resepRows = resepSheet.getDataRange().getValues();
+  const resepHeaders = resepRows.shift();
+  const resep = resepRows.map(row => {
+    const o = {}; resepHeaders.forEach((h, i) => o[h] = row[i]); return o;
+  }).find(x => String(x.id) === String(record.resep_id));
+  if (!resep) throw new Error("Resep tidak ditemukan.");
+  const qty = Number(record.jumlah_pakai);
+  const baseQty = Number(bahan.jumlah_dasar);
+  const price = Number(bahan.harga_beli);
+  if (!(qty > 0) || !(baseQty > 0) || !(price >= 0)) throw new Error("Jumlah pemakaian atau data harga bahan tidak valid.");
+  const costPerBase = price / baseQty;
+  const cost = qty * costPerBase;
+  const row = [
+    "DET-" + Date.now(), record.resep_id, record.bahan_id, bahan.nama,
+    qty, bahan.satuan_dasar, cost, "Bahan utama"
+  ];
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    ss.getSheetByName("DETAIL_RESEP").appendRow(row);
+  } finally {
+    lock.releaseLock();
+  }
+  return { ok: true, biaya: cost, nama_bahan: bahan.nama, satuan: bahan.satuan_dasar };
+}
+
+// Menghitung dan menyimpan HPP batch. Waste diterapkan pada subtotal biaya.
+function calculateAndSaveHPP(input) {
+  input = input || {};
+  const recipeId = String(input.resep_id || "");
+  const batches = Number(input.jumlah_batch || 1);
+  const actualYield = Number(input.hasil_produksi || 0);
+  const packagingPerUnit = Number(input.biaya_packaging_per_unit || 0);
+  const labor = Number(input.total_tenaga_kerja || 0);
+  const overhead = Number(input.total_overhead || 0);
+  const wastePct = Number(input.waste_persen || 0);
+  if (!recipeId || !(batches > 0) || !(actualYield > 0)) throw new Error("Pilih resep, jumlah batch, dan hasil produksi yang valid.");
+  if ([packagingPerUnit, labor, overhead, wastePct].some(x => !isFinite(x) || x < 0) || wastePct > 100) throw new Error("Biaya dan waste harus bernilai 0 atau lebih; waste maksimal 100%.");
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const all = getAll_().data;
+  const recipe = all.RESEP.find(x => String(x.id) === recipeId);
+  if (!recipe) throw new Error("Resep tidak ditemukan.");
+  const details = all.DETAIL_RESEP.filter(x => String(x.resep_id) === recipeId);
+  if (!details.length) throw new Error("Resep belum memiliki komposisi bahan.");
+  const baseIngredients = details.reduce((sum, x) => sum + Number(x.biaya || 0), 0) * batches;
+  const packaging = packagingPerUnit * actualYield;
+  const subtotal = baseIngredients + packaging + labor + overhead;
+  const wasteCost = subtotal * wastePct / 100;
+  const total = subtotal + wasteCost;
+  const perUnit = total / actualYield;
+  const id = "HPP-" + Date.now();
+  const date = input.tanggal || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
+  const row = [
+    id, date, recipeId, recipe.nama_produk, batches, baseIngredients, 0,
+    packaging, labor, overhead, wasteCost, total, actualYield, perUnit,
+    input.catatan || ""
+  ];
+  ss.getSheetByName("HPP").appendRow(row);
+  return {
+    ok: true, id: id, nama_produk: recipe.nama_produk,
+    total_bahan: baseIngredients, total_packaging: packaging,
+    total_tenaga_kerja: labor, total_overhead: overhead,
+    total_waste: wasteCost, total_biaya: total,
+    hasil_produksi: actualYield, hpp_per_unit: perUnit
+  };
+}
