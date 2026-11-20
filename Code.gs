@@ -223,7 +223,8 @@ function convertToBaseUnit_(quantity, fromUnit, toUnit) {
 }
 
 // Simpan komposisi sekaligus menghitung biaya berdasarkan harga satuan dasar bahan.
-function addRecipeDetail(record) {
+// Membentuk data komposisi dan menghitung ulang biaya dari harga bahan terbaru.
+function buildRecipeDetailRow_(record, id) {
   record = record || {};
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const bahanSheet = ss.getSheetByName("BAHAN");
@@ -247,20 +248,44 @@ function addRecipeDetail(record) {
   if (!(qtyInput > 0) || !(baseQty > 0) || !(price >= 0)) throw new Error("Jumlah pemakaian atau data harga bahan tidak valid.");
   const inputUnit = String(record.satuan_pakai || bahan.satuan_dasar);
   const qty = convertToBaseUnit_(qtyInput, inputUnit, String(bahan.satuan_dasar));
-  const costPerBase = price / baseQty;
-  const cost = qty * costPerBase;
-  const row = [
-    "DET-" + Date.now(), record.resep_id, record.bahan_id, bahan.nama,
+  const cost = qty * (price / baseQty);
+  return [
+    id || ("DET-" + Date.now()), record.resep_id, record.bahan_id, bahan.nama,
     qty, bahan.satuan_dasar, cost, "Bahan utama"
   ];
+}
+
+// Tambah komposisi baru.
+function addRecipeDetail(record) {
+  const row = buildRecipeDetailRow_(record, "");
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
-    ss.getSheetByName("DETAIL_RESEP").appendRow(row);
+    SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("DETAIL_RESEP").appendRow(row);
   } finally {
     lock.releaseLock();
   }
-  return { ok: true, biaya: cost, nama_bahan: bahan.nama, satuan: bahan.satuan_dasar };
+  return { ok: true, biaya: row[6], nama_bahan: row[3], satuan: row[5] };
+}
+
+// Edit komposisi berdasarkan ID; ID lama dipertahankan dan biaya dihitung ulang.
+function updateRecipeDetail(id, record) {
+  if (!id) throw new Error("ID komposisi tidak valid.");
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("DETAIL_RESEP");
+    if (!sh || sh.getLastRow() < 2) throw new Error("Komposisi tidak ditemukan.");
+    const ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getDisplayValues();
+    const offset = ids.findIndex(r => String(r[0]) === String(id));
+    if (offset < 0) throw new Error("Komposisi dengan ID tersebut tidak ditemukan.");
+    const rowNumber = offset + 2;
+    const row = buildRecipeDetailRow_(record, id);
+    sh.getRange(rowNumber, 1, 1, row.length).setValues([row]);
+    return { ok: true, updated: 1, biaya: row[6], nama_bahan: row[3], satuan: row[5] };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // Menghitung dan menyimpan HPP batch. Waste diterapkan pada subtotal biaya.
