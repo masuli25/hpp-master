@@ -16,7 +16,7 @@
 <div class="modalback" id="modal"><div class="modal"><div class="modalhead"><h2 id="formTitle">Tambah Data</h2><button onclick="closeForm()">✕</button></div><form id="form"><div class="fields" id="fields"></div><div class="actions"><button type="button" class="btn light" onclick="closeForm()">Batal</button><button class="btn" id="save">Simpan Data</button></div></form></div></div><div class="toast" id="toast"></div>
 <script>
 const names={dashboard:'Dashboard',ingredients:'Database Bahan',recipes:'Resep & Komposisi',production:'Produksi',packaging:'Packaging',overhead:'Biaya Operasional',costing:'Kalkulator HPP',reports:'Laporan'};
-const tabs={BAHAN:[],RESEP:[],DETAIL_RESEP:[],PRODUKSI:[],PACKAGING:[],BIAYA_OPERASIONAL:[],HPP:[]};
+const tabs={BAHAN:[],RESEP:[],DETAIL_RESEP:[],PRODUKSI:[],PACKAGING:[],BIAYA_OPERASIONAL:[],HPP:[],RIWAYAT_HARGA:[]};
 const routes={ingredient:'BAHAN',recipe:'RESEP',production:'PRODUKSI',packaging:'PACKAGING',overhead:'BIAYA_OPERASIONAL'};
 const schema={
 ingredient:{title:'Tambah Bahan',fields:[['nama','Nama bahan','text'],['kategori','Kategori','select',['Bahan baku','Bumbu & bahan tambahan','Minyak & gas','Bahan pendukung']],['harga_beli','Harga beli (Rp)','number'],['jumlah_beli','Jumlah pembelian','number'],['satuan_beli','Satuan beli','select',['kg','gram','liter','ml','pcs','pack','ikat','buah']],['jumlah_dasar','Jumlah dalam satuan dasar','number'],['satuan_dasar','Satuan dasar','select',['gram','ml','pcs','lembar','batang','buah']],['supplier','Supplier','text'],['catatan','Catatan','text']]},
