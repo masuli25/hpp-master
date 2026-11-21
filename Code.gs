@@ -71,6 +71,18 @@ function deleteRecord(table, id) {
   const ids = sh.getRange(2, idCol, sh.getLastRow() - 1, 1).getDisplayValues();
   const offset = ids.findIndex(r => String(r[0]) === String(id));
   if (offset < 0) throw new Error("Data dengan ID tersebut tidak ditemukan.");
+  // Lindungi bahan yang masih dipakai dalam komposisi resep.
+  if (table === "BAHAN") {
+    const detail = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("DETAIL_RESEP");
+    if (detail && detail.getLastRow() >= 2) {
+      const headers = TABLES.DETAIL_RESEP;
+      const bahanIdCol = headers.indexOf("bahan_id") + 1;
+      const usedIds = detail.getRange(2, bahanIdCol, detail.getLastRow() - 1, 1).getDisplayValues();
+      if (usedIds.some(r => String(r[0]) === String(id))) {
+        throw new Error("Bahan tidak dapat dihapus karena masih digunakan dalam komposisi resep. Hapus atau ganti komposisinya terlebih dahulu.");
+      }
+    }
+  }
   sh.deleteRow(offset + 2);
   return {ok:true,table:table,deleted:1};
 }
