@@ -58,6 +58,15 @@ function updateRecord(table, id, record) {
     const qty = Number(merged.jumlah_dasar || 0);
     if (!(qty > 0)) throw new Error("Jumlah dalam satuan dasar harus lebih dari 0.");
     merged.harga_per_satuan_dasar = Number(merged.harga_beli || 0) / qty;
+    if (Number(old[headers.indexOf("harga_beli")]) !== Number(merged.harga_beli)) {
+      const history = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("RIWAYAT_HARGA");
+      if (history) history.appendRow(["HRG-" + Date.now(), Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd"), id, merged.nama, old[headers.indexOf("harga_beli")], merged.harga_beli, merged.satuan_beli, "Perubahan harga melalui aplikasi"]);
+    }
+  }
+  if (table === "PACKAGING") {
+    const qty = Number(merged.jumlah_beli || 0);
+    if (!(qty > 0)) throw new Error("Jumlah pembelian packaging harus lebih dari 0.");
+    merged.biaya_per_unit = Number(merged.harga_beli || 0) / qty;
   }
   sh.getRange(rowNumber, 1, 1, headers.length).setValues([headers.map(k => merged[k])]);
   return {ok:true,table:table,updated:1};
@@ -180,6 +189,11 @@ function addRecord_(table, record) {
       const jumlahDasar = Number(record.jumlah_dasar || 0);
       if (!(jumlahDasar > 0)) throw new Error("Jumlah dalam satuan dasar harus lebih dari 0.");
       record.harga_per_satuan_dasar = harga / jumlahDasar;
+    }
+    if (table === "PACKAGING") {
+      const qty = Number(record.jumlah_beli || 0);
+      if (!(qty > 0)) throw new Error("Jumlah pembelian packaging harus lebih dari 0.");
+      record.biaya_per_unit = Number(record.harga_beli || 0) / qty;
     }
     const row = headers.map(h => record[h] !== undefined ? record[h] : "");
     sh.appendRow(row);
