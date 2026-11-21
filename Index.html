@@ -82,7 +82,7 @@ function removeRecipeComposition(id){
  },e=>toast('Gagal menghapus: '+(e.message||e)));
 }
 
-function showHPPDetail(id){const x=tabs.HPP.find(r=>String(r.id)===String(id));if(!x)return;alert('RINCIAN HPP - '+x.nama_produk+'\\nTanggal: '+x.tanggal+'\\nBatch: '+x.jumlah_batch+'\\nBahan: '+money(x.total_bahan)+'\\nPackaging: '+money(x.total_packaging)+'\\nTenaga kerja: '+money(x.total_tenaga_kerja)+'\\nOverhead: '+money(x.total_overhead)+'\\nWaste: '+money(x.total_waste)+'\\nTOTAL: '+money(x.total_biaya)+'\\nHasil produksi: '+x.hasil_produksi+'\\nHPP per unit: '+money(x.hpp_per_unit)+'\\nCatatan: '+(x.catatan||'-'))}
+function showHPPDetail(id){const x=tabs.HPP.find(r=>String(r.id)===String(id));if(!x)return;alert('RINCIAN HPP - '+x.nama_produk+' | Tanggal: '+x.tanggal+' | Batch: '+x.jumlah_batch+' | Bahan: '+money(x.total_bahan)+' | Packaging: '+money(x.total_packaging)+' | Tenaga kerja: '+money(x.total_tenaga_kerja)+' | Overhead: '+money(x.total_overhead)+' | Waste: '+money(x.total_waste)+' | TOTAL: '+money(x.total_biaya)+' | Hasil produksi: '+x.hasil_produksi+' | HPP per unit: '+money(x.hpp_per_unit)+' | Catatan: '+(x.catatan||'-'))}
 
 function removeGeneric(tableName,id){const data=tabs[tableName]||[],item=data.find(x=>String(x.id)===String(id));if(!item)return;const label=item.nama_produk||item.nama_kemasan||item.nama_biaya||item.nama||tableName;if(!confirm('Hapus data "'+label+'"? Tindakan ini tidak dapat dibatalkan.'))return;server('deleteRecord',[tableName,id],r=>{if(!r||!r.ok){toast('Data gagal dihapus.');return}toast('Data berhasil dihapus.');loadData()},e=>toast('Gagal menghapus: '+(e.message||e)))}
 
