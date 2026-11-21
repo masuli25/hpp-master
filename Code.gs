@@ -49,7 +49,10 @@ function addRecord(table, record) {
 }
 
 function replaceTable(table, records) {
-  return replaceTable_(table, records || []);
+  // Pengaman: penimpaan massal dinonaktifkan agar tabel penting seperti KATEGORI
+  // tidak terhapus akibat pemanggilan tidak sengaja atau data yang tidak lengkap.
+  // Gunakan addRecord(), updateRecord(), dan deleteRecord() untuk perubahan per baris.
+  throw new Error("replaceTable dinonaktifkan demi keamanan data. Gunakan tambah, edit, atau hapus data per baris.");
 }
 
 function updateRecord(table, id, record) {
