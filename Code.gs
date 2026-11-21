@@ -380,7 +380,8 @@ function calculateAndSaveHPP(input) {
   const overheadBreakdown = (all.BIAYA_OPERASIONAL || []).map(item => {
     const method = String(item.metode_alokasi || "").trim().toLocaleLowerCase("id-ID");
     const amount = parseLocalNumber_(item.nominal || 0);
-    const target = parseLocalNumber_(item.target_alokasi || 0);
+    let target = 0;
+    try { target = parseLocalNumber_(item.target_alokasi || 0); } catch (err) { target = 0; }
     let allocated = 0;
     if (amount > 0 && method === "per batch") allocated = amount * batches;
     else if (amount > 0 && method === "per unit produksi" && target > 0) allocated = amount / target * actualYield;
