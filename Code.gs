@@ -1,5 +1,17 @@
 const SPREADSHEET_ID = "1xXjRCHncZ8xvvi6s6qyx6zOpsi6dWHv-idj57DZGEIE";
 
+// Angka dari input Indonesia: "50.000" menjadi 50000; "50,5" menjadi 50.5.
+function parseLocalNumber_(value) {
+  if (typeof value === "number") return value;
+  let s = String(value == null ? "" : value).trim().replace(/\\s/g, "");
+  if (!s) return 0;
+  if (s.indexOf(",") >= 0) s = s.replace(/\\./g, "").replace(",", ".");
+  else if (/^-?\\d{1,3}(\\.\\d{3})+$/.test(s)) s = s.replace(/\\./g, "");
+  const n = Number(s);
+  if (!isFinite(n)) throw new Error("Format angka tidak valid: " + value);
+  return n;
+}
+
 const TABLES = {
   PENGATURAN: ["key","value","updated_at"],
   BAHAN: ["id","nama","kategori","harga_beli","jumlah_beli","satuan_beli","jumlah_dasar","satuan_dasar","harga_per_satuan_dasar","supplier","catatan","updated_at"],
