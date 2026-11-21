@@ -67,18 +67,25 @@ function updateRecord(table, id, record) {
   const merged = {};
   headers.forEach((key, i) => merged[key] = key === "id" ? old[i] : (record[key] !== undefined ? record[key] : old[i]));
   if (table === "BAHAN") {
-    const qty = Number(merged.jumlah_dasar || 0);
-    if (!(qty > 0)) throw new Error("Jumlah dalam satuan dasar harus lebih dari 0.");
-    merged.harga_per_satuan_dasar = Number(merged.harga_beli || 0) / qty;
-    if (Number(old[headers.indexOf("harga_beli")]) !== Number(merged.harga_beli)) {
+    const oldPrice = parseLocalNumber_(old[headers.indexOf("harga_beli")]);
+    const newPrice = parseLocalNumber_(merged.harga_beli);
+    const qty = parseLocalNumber_(merged.jumlah_dasar);
+    if (!(qty > 0) || newPrice < 0) throw new Error("Harga bahan tidak boleh negatif dan jumlah satuan dasar harus lebih dari 0.");
+    merged.harga_beli = newPrice;
+    merged.jumlah_dasar = qty;
+    merged.harga_per_satuan_dasar = newPrice / qty;
+    if (oldPrice !== newPrice) {
       const history = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("RIWAYAT_HARGA");
-      if (history) history.appendRow(["HRG-" + Date.now(), Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd"), id, merged.nama, old[headers.indexOf("harga_beli")], merged.harga_beli, merged.satuan_beli, "Perubahan harga melalui aplikasi"]);
+      if (history) history.appendRow(["HRG-" + Date.now(), Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd"), id, merged.nama, oldPrice, newPrice, merged.satuan_beli, "Perubahan harga melalui aplikasi"]);
     }
   }
   if (table === "PACKAGING") {
-    const qty = Number(merged.jumlah_beli || 0);
-    if (!(qty > 0)) throw new Error("Jumlah pembelian packaging harus lebih dari 0.");
-    merged.biaya_per_unit = Number(merged.harga_beli || 0) / qty;
+    const qty = parseLocalNumber_(merged.jumlah_beli);
+    const price = parseLocalNumber_(merged.harga_beli);
+    if (!(qty > 0) || price < 0) throw new Error("Harga packaging tidak boleh negatif dan jumlah pembelian harus lebih dari 0.");
+    merged.harga_beli = price;
+    merged.jumlah_beli = qty;
+    merged.biaya_per_unit = price / qty;
   }
   sh.getRange(rowNumber, 1, 1, headers.length).setValues([headers.map(k => merged[k])]);
   return {ok:true,table:table,updated:1};
@@ -197,15 +204,20 @@ function addRecord_(table, record) {
     const headers = TABLES[table];
     // Simpan harga per satuan dasar secara permanen, bukan hanya menghitungnya di tampilan.
     if (table === "BAHAN") {
-      const harga = Number(record.harga_beli || 0);
-      const jumlahDasar = Number(record.jumlah_dasar || 0);
-      if (!(jumlahDasar > 0)) throw new Error("Jumlah dalam satuan dasar harus lebih dari 0.");
+      const harga = parseLocalNumber_(record.harga_beli);
+      const jumlahDasar = parseLocalNumber_(record.jumlah_dasar);
+      if (harga < 0 || !(jumlahDasar > 0)) throw new Error("Harga bahan tidak boleh negatif dan jumlah satuan dasar harus lebih dari 0.");
+      record.harga_beli = harga;
+      record.jumlah_dasar = jumlahDasar;
       record.harga_per_satuan_dasar = harga / jumlahDasar;
     }
     if (table === "PACKAGING") {
-      const qty = Number(record.jumlah_beli || 0);
-      if (!(qty > 0)) throw new Error("Jumlah pembelian packaging harus lebih dari 0.");
-      record.biaya_per_unit = Number(record.harga_beli || 0) / qty;
+      const qty = parseLocalNumber_(record.jumlah_beli);
+      const price = parseLocalNumber_(record.harga_beli);
+      if (!(qty > 0) || price < 0) throw new Error("Harga packaging tidak boleh negatif dan jumlah pembelian harus lebih dari 0.");
+      record.harga_beli = price;
+      record.jumlah_beli = qty;
+      record.biaya_per_unit = price / qty;
     }
     const row = headers.map(h => record[h] !== undefined ? record[h] : "");
     sh.appendRow(row);
@@ -330,40 +342,74 @@ function updateRecipeDetail(id, record) {
 function calculateAndSaveHPP(input) {
   input = input || {};
   const recipeId = String(input.resep_id || "");
-  const batches = Number(input.jumlah_batch || 1);
-  const actualYield = Number(input.hasil_produksi || 0);
-  const packagingPerUnit = Number(input.biaya_packaging_per_unit || 0);
-  const labor = Number(input.total_tenaga_kerja || 0);
-  const overhead = Number(input.total_overhead || 0);
-  const wastePct = Number(input.waste_persen || 0);
-  if (!recipeId || !(batches > 0) || !(actualYield > 0)) throw new Error("Pilih resep, jumlah batch, dan hasil produksi yang valid.");
-  if ([packagingPerUnit, labor, overhead, wastePct].some(x => !isFinite(x) || x < 0) || wastePct > 100) throw new Error("Biaya dan waste harus bernilai 0 atau lebih; waste maksimal 100%.");
+  const batches = parseLocalNumber_(input.jumlah_batch || 1);
+  const actualYield = parseLocalNumber_(input.hasil_produksi);
+  const packagingPerUnit = parseLocalNumber_(input.biaya_packaging_per_unit || 0);
+  const labor = parseLocalNumber_(input.total_tenaga_kerja || 0);
+  const overhead = parseLocalNumber_(input.total_overhead || 0);
+
+  if (!recipeId || !(batches > 0) || !(actualYield > 0)) {
+    throw new Error("Pilih resep, jumlah batch, dan hasil produksi aktual yang valid.");
+  }
+  if ([packagingPerUnit, labor, overhead].some(x => !isFinite(x) || x < 0)) {
+    throw new Error("Biaya packaging, tenaga kerja, dan overhead tidak boleh negatif.");
+  }
+
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const all = getAll_().data;
   const recipe = all.RESEP.find(x => String(x.id) === recipeId);
   if (!recipe) throw new Error("Resep tidak ditemukan.");
+
   const details = all.DETAIL_RESEP.filter(x => String(x.resep_id) === recipeId);
   if (!details.length) throw new Error("Resep belum memiliki komposisi bahan.");
-  const baseIngredients = details.reduce((sum, x) => sum + Number(x.biaya || 0), 0) * batches;
-  const packaging = packagingPerUnit * actualYield;
-  const subtotal = baseIngredients + packaging + labor + overhead;
-  const wasteCost = subtotal * wastePct / 100;
-  const total = subtotal + wasteCost;
+
+  // Ambil harga bahan TERKINI. DETAIL_RESEP menyimpan kuantitas dalam satuan dasar.
+  // Dengan demikian, perubahan harga bahan langsung memengaruhi HPP berikutnya.
+  const ingredientsById = {};
+  all.BAHAN.forEach(b => ingredientsById[String(b.id)] = b);
+
+  const ingredientBreakdown = details.map(d => {
+    const ingredient = ingredientsById[String(d.bahan_id)];
+    if (!ingredient) throw new Error("Bahan pada komposisi resep tidak ditemukan: " + (d.nama_bahan || d.bahan_id));
+    const usedQty = parseLocalNumber_(d.jumlah_pakai);
+    const baseQty = parseLocalNumber_(ingredient.jumlah_dasar);
+    const purchasePrice = parseLocalNumber_(ingredient.harga_beli);
+    if (!(usedQty >= 0) || !(baseQty > 0) || !(purchasePrice >= 0)) {
+      throw new Error("Data harga atau satuan dasar bahan tidak valid: " + ingredient.nama);
+    }
+    return {
+      name: ingredient.nama,
+      costPerBatch: usedQty * (purchasePrice / baseQty)
+    };
+  });
+
+  const costPerBatch = ingredientBreakdown.reduce((sum, item) => sum + item.costPerBatch, 0);
+  const totalIngredients = costPerBatch * batches;
+  const totalPackaging = packagingPerUnit * actualYield;
+  const subtotal = totalIngredients + totalPackaging + labor + overhead;
+
+  // Metode ACTUAL: waste tercermin pada hasil produksi aktual sebagai pembagi.
+  // Jangan menambahkan persentase waste lagi karena akan menghitung kerugian dua kali.
+  const wasteCost = 0;
+  const total = subtotal;
   const perUnit = total / actualYield;
+
   const id = "HPP-" + Date.now();
   const date = input.tanggal || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
   const row = [
-    id, date, recipeId, recipe.nama_produk, batches, baseIngredients, 0,
-    packaging, labor, overhead, wasteCost, total, actualYield, perUnit,
-    input.catatan || ""
+    id, date, recipeId, recipe.nama_produk, batches, totalIngredients, 0,
+    totalPackaging, labor, overhead, wasteCost, total, actualYield, perUnit,
+    input.catatan || "Metode waste: hasil produksi aktual"
   ];
   ss.getSheetByName("HPP").appendRow(row);
+
   return {
     ok: true, id: id, nama_produk: recipe.nama_produk,
-    total_bahan: baseIngredients, total_packaging: packaging,
+    total_bahan: totalIngredients, total_packaging: totalPackaging,
     total_tenaga_kerja: labor, total_overhead: overhead,
     total_waste: wasteCost, total_biaya: total,
-    hasil_produksi: actualYield, hpp_per_unit: perUnit
+    hasil_produksi: actualYield, hpp_per_unit: perUnit,
+    metode_waste: "ACTUAL"
   };
 }
 
