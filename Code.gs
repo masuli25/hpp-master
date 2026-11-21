@@ -202,6 +202,19 @@ function addRecord_(table, record) {
     const sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(table);
     if (!sh) throw new Error("Tabel belum dibuat.");
     const headers = TABLES[table];
+    if (table === "KATEGORI") {
+      const nama = String(record.nama_kategori || "").trim();
+      if (!nama) throw new Error("Nama kategori wajib diisi.");
+      const nameCol = headers.indexOf("nama_kategori") + 1;
+      if (sh.getLastRow() >= 2) {
+        const existing = sh.getRange(2, nameCol, sh.getLastRow() - 1, 1).getDisplayValues().flat();
+        if (existing.some(x => String(x).trim().toLowerCase() === nama.toLowerCase())) {
+          throw new Error("Kategori tersebut sudah tersedia.");
+        }
+      }
+      record.nama_kategori = nama;
+      record.jenis = record.jenis || "Bahan";
+    }
     // Simpan harga per satuan dasar secara permanen, bukan hanya menghitungnya di tampilan.
     if (table === "BAHAN") {
       const harga = parseLocalNumber_(record.harga_beli);
