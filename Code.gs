@@ -362,17 +362,32 @@ function calculateAndSaveHPP(input) {
   const actualYield = parseLocalNumber_(input.hasil_produksi);
   const packagingPerUnit = parseLocalNumber_(input.biaya_packaging_per_unit || 0);
   const labor = parseLocalNumber_(input.total_tenaga_kerja || 0);
-  const overhead = parseLocalNumber_(input.total_overhead || 0);
+  const manualOverhead = parseLocalNumber_(input.total_overhead || 0);
 
   if (!recipeId || !(batches > 0) || !(actualYield > 0)) {
     throw new Error("Pilih resep, jumlah batch, dan hasil produksi aktual yang valid.");
   }
-  if ([packagingPerUnit, labor, overhead].some(x => !isFinite(x) || x < 0)) {
+  if ([packagingPerUnit, labor, manualOverhead].some(x => !isFinite(x) || x < 0)) {
     throw new Error("Biaya packaging, tenaga kerja, dan overhead tidak boleh negatif.");
   }
 
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const all = getAll_().data;
+  // Alokasi otomatis: Per batch = nominal x batch; Per unit produksi =
+  // (nominal / target unit pada periode biaya) x hasil aktual.
+  // Metode Jam kerja dan Manual tetap menggunakan input manual karena
+  // aplikasi belum memiliki data jam kerja atau dasar alokasi khusus.
+  const overheadBreakdown = (all.BIAYA_OPERASIONAL || []).map(item => {
+    const method = String(item.metode_alokasi || "").trim().toLocaleLowerCase("id-ID");
+    const amount = parseLocalNumber_(item.nominal || 0);
+    const target = parseLocalNumber_(item.target_alokasi || 0);
+    let allocated = 0;
+    if (amount > 0 && method === "per batch") allocated = amount * batches;
+    else if (amount > 0 && method === "per unit produksi" && target > 0) allocated = amount / target * actualYield;
+    return { name: String(item.nama_biaya || "Biaya operasional"), method: method, amount: amount, target: target, allocated: allocated };
+  }).filter(item => item.allocated > 0);
+  const autoOverhead = overheadBreakdown.reduce((sum, item) => sum + item.allocated, 0);
+  const overhead = autoOverhead + manualOverhead;
   const recipe = all.RESEP.find(x => String(x.id) === recipeId);
   if (!recipe) throw new Error("Resep tidak ditemukan.");
 
@@ -415,7 +430,7 @@ function calculateAndSaveHPP(input) {
   const row = [
     id, date, recipeId, recipe.nama_produk, batches, totalIngredients, 0,
     totalPackaging, labor, overhead, wasteCost, total, actualYield, perUnit,
-    input.catatan || "Metode waste: hasil produksi aktual"
+    input.catatan || ("Metode waste: hasil produksi aktual; overhead otomatis " + autoOverhead + "; overhead manual " + manualOverhead)
   ];
   ss.getSheetByName("HPP").appendRow(row);
 
@@ -425,6 +440,9 @@ function calculateAndSaveHPP(input) {
     total_tenaga_kerja: labor, total_overhead: overhead,
     total_waste: wasteCost, total_biaya: total,
     hasil_produksi: actualYield, hpp_per_unit: perUnit,
+    overhead_otomatis: autoOverhead, overhead_manual: manualOverhead,
+    rincian_overhead: overheadBreakdown,
+    total_operasional: labor + overhead,
     metode_waste: "ACTUAL"
   };
 }
